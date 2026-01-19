@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gemini AI Diary — Clean Edition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --glass-bg: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.15);
+      --accent: #8fe3ff;
+      --text-main: #e8fbff;
+      --danger: #ff6b6b;
+    }
+
+    body {
+      margin: 0; font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #012a3a 0%, #034a63 50%, #056a83 100%);
+      color: var(--text-main); display: flex; justify-content: center;
+      padding: 20px; min-height: 100vh;
+    }
+
+    .glass-container {
+      background: var(--glass-bg); backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border); border-radius: 24px;
+      padding: 30px; width: 100%; max-width: 1100px;
+      display: grid; grid-template-columns: 350px 1fr; gap: 25px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    }
+
+    /* Sidebar Items */
+    .calendar-box, .saved-titles-box { 
+      background: rgba(0,0,0,0.2); padding: 15px; border-radius: 15px; margin-bottom: 20px; 
+    }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 10px; }
+    .cal-day { padding: 8px; text-align: center; border-radius: 8px; font-size: 12px; cursor: pointer; }
+    .cal-day.today { border: 1px solid var(--accent); font-weight: bold; }
+    .cal-day.has-entry { background: rgba(143, 227, 255, 0.3); }
+
+    .title-item {
+      font-size: 13px; padding: 10px; border-bottom: 1px solid var(--glass-border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .delete-btn {
+      background: transparent; color: var(--danger); border: 1px solid var(--danger);
+      padding: 2px 8px; font-size: 10px; border-radius: 5px; cursor: pointer;
+    }
+
+    /* Chat & Content */
+    .msg { margin-bottom: 12px; padding: 12px 16px; border-radius: 15px; max-width: 85%; font-size: 14px; }
+    .msg.ai { background: rgba(143, 227, 255, 0.2); align-self: flex-start; border-left: 4px solid var(--accent); }
+    .msg.user { background: rgba(255, 255, 255, 0.15); align-self: flex-end; }
+
+    input, textarea {
+      background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);
+      border-radius: 10px; color: white; padding: 10px; width: 100%; margin-bottom: 10px; box-sizing: border-box;
+    }
+    button.primary {
+      background: var(--accent); color: #012a3a; border: none; padding: 10px 20px;
+      border-radius: 12px; font-weight: 600; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="glass-container">
+  <div class="sidebar">
+    <div class="calendar-box">
+        <div id="monthDisplay" style="font-weight:bold; margin-bottom:10px; text-align:center;"></div>
+        <div class="cal-grid" id="calendarGrid"></div>
+    </div>
+    
+    <div class="saved-titles-box">
+        <h4 style="margin: 0 0 10px 0; font-size: 14px;">Manage Entries</h4>
+        <div id="titlesList"></div>
+    </div>
+  </div>
+
+  <div class="main-content" style="display:flex; flex-direction:column; gap:20px;">
+    <div id="chatWindow" style="height:350px; overflow-y:auto; display:flex; flex-direction:column; background:rgba(0,0,0,0.2); padding:15px; border-radius:15px;">
+      </div>
+    
+    <div style="display:flex; gap:10px;">
+      <input type="text" id="chatInput" placeholder="Reply to the assistant...">
+      <button class="primary" id="sendChatBtn">Send</button>
+    </div>
+
+    <div style="background:rgba(255,255,255,0.05); padding:20px; border-radius:15px;">
+      <h3 style="margin-top:0">Log Your Day</h3>
+      <input type="text" id="entryTitle" placeholder="Title">
+      <textarea id="entryContent" placeholder="Write your thoughts..."></textarea>
+      <button class="primary" id="saveBtn" style="width: 100%;">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+  const STORAGE_KEY = 'my_diary_entries';
+  const API_KEY = AIzaSyCAcz48YiQBA0vfzGDeOqnfjQ7sQWYQdAg; // PASTE YOUR KEY HERE
+  const genAI = new GoogleGenerativeAI(API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-3.0-flash" });
+
+  let entries = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+
+  window.onload = () => {
+      setTimeout(() => {
+          appendMsg('ai', "Hi! I'm your diary assistant. How was your day? Tell me everything! 😊");
+      }, 800);
+      renderCalendar();
+      renderTitles();
+  };
+
+  function saveToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      renderCalendar();
+      renderTitles();
+  }
+
+  window.deleteEntry = (index) => {
+      if(confirm("Delete this memory?")) {
+          entries.splice(index, 1);
+          saveToStorage();
+      }
+  };
+
+  function renderTitles() {
+      const list = document.getElementById('titlesList');
+      list.innerHTML = entries.length ? '' : '<div style="font-size:12px; opacity:0.6;">No entries.</div>';
+      entries.forEach((e, i) => {
+          const div = document.createElement('div');
+          div.className = 'title-item';
+          div.innerHTML = `<div><b>${e.title}</b><br><small>${e.date}</small></div>
+                           <button class="delete-btn" onclick="deleteEntry(${i})">Delete</button>`;
+          list.appendChild(div);
+      });
+  }
+
+  function renderCalendar() {
+      const grid = document.getElementById('calendarGrid');
+      const now = new Date();
+      document.getElementById('monthDisplay').innerText = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+      grid.innerHTML = '';
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+      for (let d = 1; d <= daysInMonth; d++) {
+          const dateISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          const dayEl = document.createElement('div');
+          dayEl.className = 'cal-day';
+          if(d === now.getDate()) dayEl.classList.add('today');
+          if(entries.some(e => e.date === dateISO)) dayEl.classList.add('has-entry');
+          dayEl.innerText = d;
+          grid.appendChild(dayEl);
+      }
+  }
+
+  document.getElementById('saveBtn').onclick = () => {
+      const title = document.getElementById('entryTitle').value.trim();
+      const content = document.getElementById('entryContent').value.trim();
+      if (!title || !content) return alert("Please fill both!");
+      entries.unshift({ title, content, date: new Date().toISOString().split('T')[0] });
+      saveToStorage();
+      document.getElementById('entryTitle').value = '';
+      document.getElementById('entryContent').value = '';
+  };
+
+  async function talkToAI() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      appendMsg('user', text);
+      chatInput.value = '';
+      try {
+          const result = await model.generateContent(text);
+          appendMsg('ai', result.response.text());
+      } catch (e) { appendMsg('ai', "Check your API key!"); }
+  }
+
+  function appendMsg(role, text) {
+      const div = document.createElement('div'); div.className = `msg ${role}`; div.innerText = text;
+      const win = document.getElementById('chatWindow');
+      win.appendChild(div); win.scrollTop = win.scrollHeight;
+  }
+
+  document.getElementById('sendChatBtn').onclick = talkToAI;
+</script>
+</body>
+</html>
